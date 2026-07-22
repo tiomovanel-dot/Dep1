@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#20304d">
+<title>tinyGPT</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{
+  --paper:#f3ecdd; --paper-edge:#e7ddc4; --ink:#20304d; --ink-light:#33456b;
+  --rust:#c1622d; --rust-dark:#9c4a1e; --gold:#b8860b; --gold-bright:#e0a83a;
+  --text-dark:#2b2418; --text-mute:#8a7f68;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;margin:0;}
+body{
+  background:var(--paper);
+  background-image:radial-gradient(circle at 20% 10%, rgba(184,134,11,.05), transparent 40%),radial-gradient(circle at 90% 80%, rgba(32,48,77,.05), transparent 40%);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text-dark); display:flex; flex-direction:column; height:100vh; height:100dvh; overflow:hidden;
+}
+.topbar{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px 10px; border-bottom:1px solid var(--paper-edge); background:var(--paper); flex-shrink:0; }
+.topbar h1{ font-family:Georgia,'Iowan Old Style','Palatino Linotype',serif; font-size:20px; font-weight:700; color:var(--ink); margin:0; }
+.topbar .sub{ font-size:11px; color:var(--text-mute); text-transform:uppercase; margin-top:2px; }
+.icon-btn{ border:none; background:transparent; font-size:19px; color:var(--gold); cursor:pointer; padding:6px 10px; border-radius:8px; }
+.icon-btn:active{ background:rgba(184,134,11,.15); }
+
+.chat{ flex:1; overflow-y:auto; padding:16px 12px 8px; display:flex; flex-direction:column; gap:12px; }
+.bubble-row{ display:flex; flex-direction:column; max-width:86%; }
+.bubble-row.user{ align-self:flex-end; align-items:flex-end; }
+.bubble-row.assistant{ align-self:flex-start; align-items:flex-start; }
+.bubble-row.system-note{ align-self:center; max-width:96%; align-items:center; }
+.bubble{ padding:11px 14px; border-radius:16px; font-size:15px; line-height:1.45; box-shadow:0 2px 6px rgba(0,0,0,.12); word-wrap:break-word; white-space:pre-wrap; }
+.bubble-row.user .bubble{ background:linear-gradient(160deg,var(--rust),var(--rust-dark)); color:#fdf3e9; border-bottom-right-radius:4px; }
+.bubble-row.assistant .bubble{ background:linear-gradient(160deg,var(--ink-light),var(--ink)); color:#eef1f6; border-bottom-left-radius:4px; }
+.bubble-row.system-note .bubble{ background:var(--paper-edge); color:var(--text-mute); font-size:12.5px; text-align:left; box-shadow:none; line-height:1.5; }
+.meta{ font-size:10.5px; color:var(--text-mute); margin-top:3px; padding:0 4px; }
+
+.suggestions{ display:flex; gap:8px; overflow-x:auto; padding:0 12px 10px; flex-shrink:0; }
+.suggestions button{ border:1px solid var(--paper-edge); background:#fffdf8; color:var(--ink); border-radius:999px; padding:7px 13px; font-size:12.5px; white-space:nowrap; cursor:pointer; }
+.suggestions button:active{ background:var(--paper-edge); }
+
+.composer{ display:flex; align-items:flex-end; gap:8px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); border-top:1px solid var(--paper-edge); background:var(--paper); flex-shrink:0; }
+#input{ flex:1; resize:none; border:1px solid var(--paper-edge); border-radius:14px; padding:10px 14px; font-size:15px; font-family:inherit; max-height:120px; background:#fffdf8; color:var(--text-dark); }
+#input:focus{ outline:none; border-color:var(--gold); }
+#sendBtn{ border:none; width:44px; height:44px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold) 70%, #7a5e0a 100%); color:#2b1e04; font-size:18px; box-shadow:0 3px 8px rgba(0,0,0,.3); cursor:pointer; flex-shrink:0; }
+#sendBtn:active{ transform:scale(.94); }
+#sendBtn:disabled{ opacity:.4; }
+
+.modal-overlay{ position:fixed; inset:0; background:rgba(20,16,8,.55); display:flex; align-items:flex-end; justify-content:center; z-index:20; }
+.modal-overlay[hidden]{ display:none; }
+.modal{ width:100%; max-width:440px; background:var(--paper); border-radius:20px 20px 0 0; padding:20px 20px calc(20px + env(safe-area-inset-bottom)); max-height:85vh; overflow-y:auto; }
+.modal h2{ font-family:Georgia,serif; color:var(--ink); margin:0 0 10px; font-size:19px; }
+.modal p{ font-size:13.5px; color:var(--text-mute); line-height:1.55; margin:0 0 12px; }
+.modal code{ background:var(--paper-edge); padding:1px 5px; border-radius:4px; font-size:12.5px; }
+.modal-actions{ display:flex; flex-direction:column; gap:10px; margin-top:8px; }
+.btn{ border:none; border-radius:10px; padding:12px 0; font-size:14.5px; font-weight:600; cursor:pointer; }
+.btn-secondary{ background:transparent; border:1px solid var(--paper-edge); color:var(--text-dark); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>tinyGPT</h1>
+    <div class="sub">357k paramètres &middot; 100% local</div>
+  </div>
+  <button class="icon-btn" id="infoBtn" aria-label="À propos">&#9432;</button>
+</div>
+
+<div class="chat" id="chat"></div>
+
+<div class="suggestions" id="suggestions">
+  <button data-msg="Bonjour ! Comment vas-tu aujourd'hui ?">Bonjour !</button>
+  <button data-msg="Combien font 8 plus 5 ?">Un calcul</button>
+  <button data-msg="Quelle est la capitale de l'Espagne ?">Une capitale</button>
+  <button data-msg="Explique-moi la théorie de la relativité.">Hors-sujet exprès</button>
+  <button data-msg="Tu aimes quoi comme musique ?">Petite discussion</button>
+</div>
+
+<div class="composer">
+  <textarea id="input" placeholder="Écris un message (format A:/B:)…" rows="1"></textarea>
+  <button id="sendBtn" aria-label="Envoyer">&#10148;</button>
+</div>
+
+<div class="modal-overlay" id="infoOverlay" hidden>
+  <div class="modal">
+    <h2>Qu'est-ce que tinyGPT ?</h2>
+    <p>Un vrai transformer (architecture GPT), <strong>écrit à la main en NumPy pur</strong> côté
+    Python — y compris le moteur de rétropropagation — puis entraîné sur 8 Mo de dialogues
+    synthétiques (3700 itérations, 1 seul cœur CPU). Cette page fait tourner <strong>ce même
+    modèle entraîné</strong>, porté en JavaScript pur, entièrement dans ton navigateur.</p>
+    <p><strong>357 000 paramètres</strong> — environ 20 000 fois moins que les plus petits
+    modèles commerciaux. Il a appris la <em>forme</em> du dialogue français (ponctuation,
+    tournures de phrases) mais pas à répondre au fond des questions : essaie le bouton
+    "Hors-sujet exprès" pour le voir clairement.</p>
+    <p>Format d'entraînement : tours <code>A:</code> / <code>B:</code>, mémoire limitée à 64
+    caractères de contexte.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="clearChatBtn">Effacer la conversation</button>
+      <button class="btn btn-secondary" id="closeInfoBtn">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<script src="weights-part0.js"></script>
+<script src="weights-part1.js"></script>
+<script src="weights-part2.js"></script>
+<script src="weights-part3.js"></script>
+<script src="weights-part4.js"></script>
+<script src="weights-part5.js"></script>
+<script src="weights-part6.js"></script>
+<script src="weights-part7.js"></script>
+<script src="weights-part8.js"></script>
+<script src="weights-part9.js"></script>
+<script src="weights-part0.js"></script>
+<script src="weights-part1.js"></script>
+<script src="weights-part2.js"></script>
+<script src="weights-part3.js"></script>
+<script src="weights-part4.js"></script>
+<script src="weights-part5.js"></script>
+<script src="weights-part6.js"></script>
+<script src="weights-part7.js"></script>
+<script src="weights-part8.js"></script>
+<script src="weights-part9.js"></script>
+<script src="weights-part10.js"></script>
+<script src="weights-part11.js"></script>
+<script>
+const TINYGPT_META = {"config": {"vocab_size": 81, "block_size": 128, "n_layer": 6, "n_head": 8, "n_embd": 384}, "manifest": [{"name": "tok_emb", "shape": [81, 384], "offset": 0, "size": 31104}, {"name": "pos_emb", "shape": [128, 384], "offset": 31104, "size": 49152}, {"name": "ln_f_g", "shape": [384], "offset": 80256, "size": 384}, {"name": "ln_f_b", "shape": [384], "offset": 80640, "size": 384}, {"name": "head_W", "shape": [384, 81], "offset": 81024, "size": 31104}, {"name": "b0.ln1_g", "shape": [384], "offset": 112128, "size": 384}, {"name": "b0.ln1_b", "shape": [384], "offset": 112512, "size": 384}, {"name": "b0.ln2_g", "shape": [384], "offset": 112896, "size": 384}, {"name": "b0.ln2_b", "shape": [384], "offset": 113280, "size": 384}, {"name": "b0.W_qkv", "shape": [384, 1152], "offset": 113664, "size": 442368}, {"name": "b0.b_qkv", "shape": [1152], "offset": 556032, "size": 1152}, {"name": "b0.W_proj", "shape": [384, 384], "offset": 557184, "size": 147456}, {"name": "b0.b_proj", "shape": [384], "offset": 704640, "size": 384}, {"name": "b0.W1", "shape": [384, 1536], "offset": 705024, "size": 589824}, {"name": "b0.b1", "shape": [1536], "offset": 1294848, "size": 1536}, {"name": "b0.W2", "shape": [1536, 384], "offset": 1296384, "size": 589824}, {"name": "b0.b2", "shape": [384], "offset": 1886208, "size": 384}, {"name": "b1.ln1_g", "shape": [384], "offset": 1886592, "size": 384}, {"name": "b1.ln1_b", "shape": [384], "offset": 1886976, "size": 384}, {"name": "b1.ln2_g", "shape": [384], "offset": 1887360, "size": 384}, {"name": "b1.ln2_b", "shape": [384], "offset": 1887744, "size": 384}, {"name": "b1.W_qkv", "shape": [384, 1152], "offset": 1888128, "size": 442368}, {"name": "b1.b_qkv", "shape": [1152], "offset": 2330496, "size": 1152}, {"name": "b1.W_proj", "shape": [384, 384], "offset": 2331648, "size": 147456}, {"name": "b1.b_proj", "shape": [384], "offset": 2479104, "size": 384}, {"name": "b1.W1", "shape": [384, 1536], "offset": 2479488, "size": 589824}, {"name": "b1.b1", "shape": [1536], "offset": 3069312, "size": 1536}, {"name": "b1.W2", "shape": [1536, 384], "offset": 3070848, "size": 589824}, {"name": "b1.b2", "shape": [384], "offset": 3660672, "size": 384}, {"name": "b2.ln1_g", "shape": [384], "offset": 3661056, "size": 384}, {"name": "b2.ln1_b", "shape": [384], "offset": 3661440, "size": 384}, {"name": "b2.ln2_g", "shape": [384], "offset": 3661824, "size": 384}, {"name": "b2.ln2_b", "shape": [384], "offset": 3662208, "size": 384}, {"name": "b2.W_qkv", "shape": [384, 1152], "offset": 3662592, "size": 442368}, {"name": "b2.b_qkv", "shape": [1152], "offset": 4104960, "size": 1152}, {"name": "b2.W_proj", "shape": [384, 384], "offset": 4106112, "size": 147456}, {"name": "b2.b_proj", "shape": [384], "offset": 4253568, "size": 384}, {"name": "b2.W1", "shape": [384, 1536], "offset": 4253952, "size": 589824}, {"name": "b2.b1", "shape": [1536], "offset": 4843776, "size": 1536}, {"name": "b2.W2", "shape": [1536, 384], "offset": 4845312, "size": 589824}, {"name": "b2.b2", "shape": [384], "offset": 5435136, "size": 384}, {"name": "b3.ln1_g", "shape": [384], "offset": 5435520, "size": 384}, {"name": "b3.ln1_b", "shape": [384], "offset": 5435904, "size": 384}, {"name": "b3.ln2_g", "shape": [384], "offset": 5436288, "size": 384}, {"name": "b3.ln2_b", "shape": [384], "offset": 5436672, "size": 384}, {"name": "b3.W_qkv", "shape": [384, 1152], "offset": 5437056, "size": 442368}, {"name": "b3.b_qkv", "shape": [1152], "offset": 5879424, "size": 1152}, {"name": "b3.W_proj", "shape": [384, 384], "offset": 5880576, "size": 147456}, {"name": "b3.b_proj", "shape": [384], "offset": 6028032, "size": 384}, {"name": "b3.W1", "shape": [384, 1536], "offset": 6028416, "size": 589824}, {"name": "b3.b1", "shape": [1536], "offset": 6618240, "size": 1536}, {"name": "b3.W2", "shape": [1536, 384], "offset": 6619776, "size": 589824}, {"name": "b3.b2", "shape": [384], "offset": 7209600, "size": 384}, {"name": "b4.ln1_g", "shape": [384], "offset": 7209984, "size": 384}, {"name": "b4.ln1_b", "shape": [384], "offset": 7210368, "size": 384}, {"name": "b4.ln2_g", "shape": [384], "offset": 7210752, "size": 384}, {"name": "b4.ln2_b", "shape": [384], "offset": 7211136, "size": 384}, {"name": "b4.W_qkv", "shape": [384, 1152], "offset": 7211520, "size": 442368}, {"name": "b4.b_qkv", "shape": [1152], "offset": 7653888, "size": 1152}, {"name": "b4.W_proj", "shape": [384, 384], "offset": 7655040, "size": 147456}, {"name": "b4.b_proj", "shape": [384], "offset": 7802496, "size": 384}, {"name": "b4.W1", "shape": [384, 1536], "offset": 7802880, "size": 589824}, {"name": "b4.b1", "shape": [1536], "offset": 8392704, "size": 1536}, {"name": "b4.W2", "shape": [1536, 384], "offset": 8394240, "size": 589824}, {"name": "b4.b2", "shape": [384], "offset": 8984064, "size": 384}, {"name": "b5.ln1_g", "shape": [384], "offset": 8984448, "size": 384}, {"name": "b5.ln1_b", "shape": [384], "offset": 8984832, "size": 384}, {"name": "b5.ln2_g", "shape": [384], "offset": 8985216, "size": 384}, {"name": "b5.ln2_b", "shape": [384], "offset": 8985600, "size": 384}, {"name": "b5.W_qkv", "shape": [384, 1152], "offset": 8985984, "size": 442368}, {"name": "b5.b_qkv", "shape": [1152], "offset": 9428352, "size": 1152}, {"name": "b5.W_proj", "shape": [384, 384], "offset": 9429504, "size": 147456}, {"name": "b5.b_proj", "shape": [384], "offset": 9576960, "size": 384}, {"name": "b5.W1", "shape": [384, 1536], "offset": 9577344, "size": 589824}, {"name": "b5.b1", "shape": [1536], "offset": 10167168, "size": 1536}, {"name": "b5.W2", "shape": [1536, 384], "offset": 10168704, "size": 589824}, {"name": "b5.b2", "shape": [384], "offset": 10758528, "size": 384}], "stoi": {"\n": 0, " ": 1, "!": 2, "'": 3, ",": 4, "-": 5, ".": 6, "0": 7, "1": 8, "2": 9, "3": 10, "4": 11, "5": 12, "6": 13, "7": 14, "8": 15, "9": 16, ":": 17, "?": 18, "A": 19, "B": 20, "C": 21, "D": 22, "E": 23, "F": 24, "G": 25, "H": 26, "I": 27, "J": 28, "K": 29, "L": 30, "M": 31, "N": 32, "O": 33, "P": 34, "Q": 35, "R": 36, "S": 37, "T": 38, "V": 39, "Y": 40, "Z": 41, "a": 42, "b": 43, "c": 44, "d": 45, "e": 46, "f": 47, "g": 48, "h": 49, "i": 50, "j": 51, "k": 52, "l": 53, "m": 54, "n": 55, "o": 56, "p": 57, "q": 58, "r": 59, "s": 60, "t": 61, "u": 62, "v": 63, "w": 64, "x": 65, "y": 66, "z": 67, "\u00c0": 68, "\u00c7": 69, "\u00c9": 70, "\u00e0": 71, "\u00e2": 72, "\u00e7": 73, "\u00e8": 74, "\u00e9": 75, "\u00ea": 76, "\u00ee": 77, "\u00ef": 78, "\u00f4": 79, "\u00f9": 80}, "itos": {"0": "\n", "1": " ", "2": "!", "3": "'", "4": ",", "5": "-", "6": ".", "7": "0", "8": "1", "9": "2", "10": "3", "11": "4", "12": "5", "13": "6", "14": "7", "15": "8", "16": "9", "17": ":", "18": "?", "19": "A", "20": "B", "21": "C", "22": "D", "23": "E", "24": "F", "25": "G", "26": "H", "27": "I", "28": "J", "29": "K", "30": "L", "31": "M", "32": "N", "33": "O", "34": "P", "35": "Q", "36": "R", "37": "S", "38": "T", "39": "V", "40": "Y", "41": "Z", "42": "a", "43": "b", "44": "c", "45": "d", "46": "e", "47": "f", "48": "g", "49": "h", "50": "i", "51": "j", "52": "k", "53": "l", "54": "m", "55": "n", "56": "o", "57": "p", "58": "q", "59": "r", "60": "s", "61": "t", "62": "u", "63": "v", "64": "w", "65": "x", "66": "y", "67": "z", "68": "\u00c0", "69": "\u00c7", "70": "\u00c9", "71": "\u00e0", "72": "\u00e2", "73": "\u00e7", "74": "\u00e8", "75": "\u00e9", "76": "\u00ea", "77": "\u00ee", "78": "\u00ef", "79": "\u00f4", "80": "\u00f9"}, "numParts": 12};
+</script>
+<script>
+
+/* === MOTEUR TINYGPT (tinygpt.js) === */
+// tinygpt.js — Port JavaScript du forward pass de model.py (inférence uniquement).
+// Reproduit exactement l'architecture : embeddings -> blocs (attention causale + MLP,
+// pré-layernorm, résiduels) -> layernorm finale -> projection vocabulaire.
+// Aucune bibliothèque : juste des tableaux JS et des boucles, comme le NumPy pur côté Python.
+
+function decodeWeights(payload) {
+  const raw = atob(payload.weightsB64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  const floats = new Float32Array(bytes.buffer);
+
+  const tensors = {};
+  for (const t of payload.manifest) {
+    tensors[t.name] = { data: floats.subarray(t.offset, t.offset + t.size), shape: t.shape };
+  }
+  return tensors;
+}
+
+// ---- Opérations élémentaires (toutes travaillent sur des tableaux plats row-major) ----
+
+function linear(x, T, Cin, W, Cout, b) {
+  // x: (T,Cin) plat, W.data: (Cin,Cout) plat, b.data: (Cout) ou null -> retourne (T,Cout) plat
+  const out = new Float32Array(T * Cout);
+  const Wd = W.data;
+  for (let t = 0; t < T; t++) {
+    for (let o = 0; o < Cout; o++) {
+      let sum = b ? b.data[o] : 0;
+      const xBase = t * Cin;
+      for (let i = 0; i < Cin; i++) sum += x[xBase + i] * Wd[i * Cout + o];
+      out[t * Cout + o] = sum;
+    }
+  }
+  return out;
+}
+
+function layernorm(x, T, C, gamma, beta, eps = 1e-5) {
+  const out = new Float32Array(T * C);
+  for (let t = 0; t < T; t++) {
+    const base = t * C;
+    let mean = 0;
+    for (let i = 0; i < C; i++) mean += x[base + i];
+    mean /= C;
+    let variance = 0;
+    for (let i = 0; i < C; i++) { const d = x[base + i] - mean; variance += d * d; }
+    variance /= C;
+    const invStd = 1 / Math.sqrt(variance + eps);
+    for (let i = 0; i < C; i++) {
+      out[base + i] = (x[base + i] - mean) * invStd * gamma.data[i] + beta.data[i];
+    }
+  }
+  return out;
+}
+
+function gelu(x) {
+  // Approximation tanh ("new GELU"), identique à numpy_nn.py
+  const c = Math.sqrt(2 / Math.PI);
+  const out = new Float32Array(x.length);
+  for (let i = 0; i < x.length; i++) {
+    const v = x[i];
+    const inner = c * (v + 0.044715 * v * v * v);
+    out[i] = 0.5 * v * (1 + Math.tanh(inner));
+  }
+  return out;
+}
+
+function addInPlace(a, b) { for (let i = 0; i < a.length; i++) a[i] += b[i]; return a; }
+
+function softmaxRow(arr, start, len) {
+  let max = -Infinity;
+  for (let i = 0; i < len; i++) if (arr[start + i] > max) max = arr[start + i];
+  let sum = 0;
+  for (let i = 0; i < len; i++) { arr[start + i] = Math.exp(arr[start + i] - max); sum += arr[start + i]; }
+  for (let i = 0; i < len; i++) arr[start + i] /= sum;
+}
+
+// ---- Attention causale multi-tête ----
+function causalSelfAttention(x, T, C, nHead, headDim, W_qkv, b_qkv, W_proj, b_proj) {
+  const qkv = linear(x, T, C, W_qkv, 3 * C, b_qkv); // (T, 3C)
+  const out = new Float32Array(T * C);
+  const scale = 1 / Math.sqrt(headDim);
+
+  for (let h = 0; h < nHead; h++) {
+    const qOff = h * headDim, kOff = C + h * headDim, vOff = 2 * C + h * headDim;
+    // scores[t1][t2] pour t2 <= t1 (masque causal)
+    for (let t1 = 0; t1 < T; t1++) {
+      const scores = new Float32Array(t1 + 1);
+      for (let t2 = 0; t2 <= t1; t2++) {
+        let dot = 0;
+        for (let d = 0; d < headDim; d++) dot += qkv[t1 * 3 * C + qOff + d] * qkv[t2 * 3 * C + kOff + d];
+        scores[t2] = dot * scale;
+      }
+      softmaxRow(scores, 0, t1 + 1);
+      for (let d = 0; d < headDim; d++) {
+        let acc = 0;
+        for (let t2 = 0; t2 <= t1; t2++) acc += scores[t2] * qkv[t2 * 3 * C + vOff + d];
+        out[t1 * C + h * headDim + d] = acc;
+      }
+    }
+  }
+  return linear(out, T, C, W_proj, C, b_proj);
+}
+
+class TinyGPT {
+  constructor(payload) {
+    this.cfg = payload.config;
+    this.tensors = decodeWeights(payload);
+    this.stoi = payload.stoi;
+    this.itos = payload.itos;
+  }
+
+  get(name) { return this.tensors[name]; }
+
+  // Renvoie les logits (Float32Array de taille vocab_size) pour la dernière position d'une séquence idx (array d'entiers)
+  forward(idx) {
+    const { n_layer, n_head, n_embd, vocab_size } = this.cfg;
+    const T = idx.length;
+    const C = n_embd;
+    const headDim = C / n_head;
+
+    const tok_emb = this.get('tok_emb'); // (vocab, C)
+    const pos_emb = this.get('pos_emb'); // (block_size, C)
+    let x = new Float32Array(T * C);
+    for (let t = 0; t < T; t++) {
+      for (let c = 0; c < C; c++) {
+        x[t * C + c] = tok_emb.data[idx[t] * C + c] + pos_emb.data[t * C + c];
+      }
+    }
+
+    for (let l = 0; l < n_layer; l++) {
+      const p = (n) => this.get(`b${l}.${n}`);
+      const ln1 = layernorm(x, T, C, p('ln1_g'), p('ln1_b'));
+      const attnOut = causalSelfAttention(ln1, T, C, n_head, headDim, p('W_qkv'), p('b_qkv'), p('W_proj'), p('b_proj'));
+      x = addInPlace(x.slice(), attnOut);
+
+      const ln2 = layernorm(x, T, C, p('ln2_g'), p('ln2_b'));
+      const h1 = gelu(linear(ln2, T, C, p('W1'), 4 * C, p('b1')));
+      const h2 = linear(h1, T, 4 * C, p('W2'), C, p('b2'));
+      x = addInPlace(x.slice(), h2);
+    }
+
+    const xf = layernorm(x, T, C, this.get('ln_f_g'), this.get('ln_f_b'));
+    // logits uniquement pour la dernière position (inutile de calculer tout T pour la génération)
+    const lastRow = xf.subarray((T - 1) * C, T * C);
+    const headW = this.get('head_W'); // (C, vocab)
+    const logits = new Float32Array(vocab_size);
+    for (let v = 0; v < vocab_size; v++) {
+      let sum = 0;
+      for (let c = 0; c < C; c++) sum += lastRow[c] * headW.data[c * vocab_size + v];
+      logits[v] = sum;
+    }
+    return logits;
+  }
+
+  encode(str) { return Array.from(str).map(ch => this.stoi[ch]); }
+  decode(ids) { return ids.map(i => this.itos[String(i)]).join(''); }
+
+  // Génération autoregressive. rngFn() doit renvoyer un flottant uniforme [0,1).
+  // topP (nucleus sampling) et repetitionPenalty sont les équivalents exacts de model.py.
+  generate(prompt, maxNewTokens, temperature, topK, rngFn, stopChar, topP, repetitionPenalty) {
+    let ids = this.encode(prompt);
+    const blockSize = this.cfg.block_size;
+    repetitionPenalty = repetitionPenalty || 1.0;
+
+    for (let step = 0; step < maxNewTokens; step++) {
+      const idxCond = ids.length > blockSize ? ids.slice(ids.length - blockSize) : ids;
+      const logits = this.forward(idxCond);
+      const n = logits.length;
+      const scaled = new Float32Array(n);
+      for (let i = 0; i < n; i++) scaled[i] = logits[i] / Math.max(temperature, 1e-6);
+
+      if (repetitionPenalty !== 1.0) {
+        const seen = new Set(idxCond);
+        for (const tokId of seen) {
+          scaled[tokId] = scaled[tokId] > 0 ? scaled[tokId] / repetitionPenalty : scaled[tokId] * repetitionPenalty;
+        }
+      }
+
+      let candidates = Array.from({ length: n }, (_, i) => i);
+      if (topK && topK < n) {
+        candidates.sort((a, b) => scaled[b] - scaled[a]);
+        candidates = candidates.slice(0, topK);
+      }
+      let probsArr = candidates.map(i => scaled[i]);
+      let max = Math.max(...probsArr);
+      let exps = probsArr.map(v => Math.exp(v - max));
+      let sum = exps.reduce((a, b) => a + b, 0);
+      let normalized = exps.map(v => v / sum);
+
+      if (topP) {
+        const order = normalized.map((p, i) => i).sort((a, b) => normalized[b] - normalized[a]);
+        let cum = 0, cutoff = order.length;
+        for (let i = 0; i < order.length; i++) {
+          cum += normalized[order[i]];
+          if (cum >= topP) { cutoff = i + 1; break; }
+        }
+        const survivorsSortedByProb = order.slice(0, cutoff); // positions déjà triées par proba décroissante
+        candidates = survivorsSortedByProb.map(pos => candidates[pos]);
+        probsArr = candidates.map(i => scaled[i]);
+        max = Math.max(...probsArr);
+        exps = probsArr.map(v => Math.exp(v - max));
+        sum = exps.reduce((a, b) => a + b, 0);
+        normalized = exps.map(v => v / sum);
+      }
+
+      const r = rngFn();
+      let cum = 0, chosenIdx = candidates[candidates.length - 1];
+      for (let i = 0; i < candidates.length; i++) {
+        cum += normalized[i];
+        if (r < cum) { chosenIdx = candidates[i]; break; }
+      }
+
+      ids.push(chosenIdx);
+      if (stopChar !== undefined && chosenIdx === stopChar) break;
+    }
+    return ids;
+  }
+}
+
+if (typeof module === 'object' && module.exports) module.exports = { TinyGPT, decodeWeights };
+
+
+</script>
+<script>
+
+const TINYGPT_PAYLOAD = Object.assign(
+  {}, TINYGPT_META,
+  { weightsB64: TINYGPT_WEIGHTS_PART0 + TINYGPT_WEIGHTS_PART1 + TINYGPT_WEIGHTS_PART2 + TINYGPT_WEIGHTS_PART3 + TINYGPT_WEIGHTS_PART4 + TINYGPT_WEIGHTS_PART5 + TINYGPT_WEIGHTS_PART6 + TINYGPT_WEIGHTS_PART7 + TINYGPT_WEIGHTS_PART8 + TINYGPT_WEIGHTS_PART9 + TINYGPT_WEIGHTS_PART10 + TINYGPT_WEIGHTS_PART11 }
+);
+
+</script>
+<script>
+
+(function () {
+  const chatEl = document.getElementById('chat');
+  const inputEl = document.getElementById('input');
+  const sendBtn = document.getElementById('sendBtn');
+  const infoBtn = document.getElementById('infoBtn');
+  const infoOverlay = document.getElementById('infoOverlay');
+  const closeInfoBtn = document.getElementById('closeInfoBtn');
+  const clearChatBtn = document.getElementById('clearChatBtn');
+  const suggestionsEl = document.getElementById('suggestions');
+
+  let model = null;
+  let history = ''; // texte brut au format A:/B:, tronqué à block_size pour le contexte
+  let messages = []; // pour l'affichage uniquement
+
+  function boot() {
+    try {
+      model = new TinyGPT(TINYGPT_PAYLOAD);
+      addBubbleRow('system-note', `Modèle chargé : ${TINYGPT_PAYLOAD.manifest.reduce((s,t)=>s+t.size,0).toLocaleString('fr-FR')} paramètres, directement dans ce navigateur. Aucune connexion internet utilisée.`, false);
+    } catch (err) {
+      console.error(err);
+      addBubbleRow('system-note', "Erreur au chargement du modèle : " + err.message, false);
+    }
+  }
+
+  function formatTime(date) { return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
+
+  function addBubbleRow(kind, text, withMeta) {
+    const row = document.createElement('div');
+    row.className = 'bubble-row ' + kind;
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    row.appendChild(bubble);
+    if (withMeta) {
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = formatTime(new Date());
+      row.appendChild(meta);
+    }
+    chatEl.appendChild(row);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return bubble;
+  }
+
+  function autoGrow() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+  }
+
+  function sendMessage(forcedText) {
+    if (!model) return;
+    const text = (forcedText !== undefined ? forcedText : inputEl.value).trim();
+    if (!text) return;
+
+    addBubbleRow('user', text, true);
+    if (forcedText === undefined) { inputEl.value = ''; autoGrow(); }
+
+    history += `A: ${text}\nB:`;
+    const blockSize = model.cfg.block_size;
+    const context = history.length > blockSize ? history.slice(-blockSize) : history;
+
+    const stopId = model.stoi['\n'];
+    // temperature=0.8, top_k=30, top_p=0.9, repetition_penalty=1.3
+    const ids = model.generate(context, 120, 0.8, 30, Math.random, stopId, 0.9, 1.3);
+    const fullText = model.decode(ids);
+    let reply = fullText.slice(context.length);
+    reply = reply.split('\n')[0].trim();
+    reply = reply.replace(/^[AB]:\s*/, ''); // au cas où le modèle hallucine un préfixe de tour
+    if (!reply) reply = '(réponse vide)';
+
+    addBubbleRow('assistant', reply, true);
+    history += `${reply}\n`;
+  }
+
+  sendBtn.addEventListener('click', () => sendMessage());
+  inputEl.addEventListener('input', autoGrow);
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendMessage(); }
+  });
+  suggestionsEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (btn) sendMessage(btn.dataset.msg);
+  });
+  infoBtn.addEventListener('click', () => { infoOverlay.hidden = false; });
+  closeInfoBtn.addEventListener('click', () => { infoOverlay.hidden = true; });
+  clearChatBtn.addEventListener('click', () => {
+    history = '';
+    chatEl.innerHTML = '';
+    infoOverlay.hidden = true;
+    boot();
+  });
+
+  boot();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  }
+})();
+
+</script>
+
